@@ -71,6 +71,7 @@ import com.t8rin.imagetoolbox.core.ui.widget.preferences.PreferenceItemOverload
 import com.t8rin.imagetoolbox.core.ui.widget.text.TitleItem
 import com.t8rin.imagetoolbox.core.utils.getString
 import com.t8rin.imagetoolbox.feature.filters.presentation.screenLogic.FiltersComponent
+import com.t8rin.imagetoolbox.feature.smart_auto.SmartAutoControls
 
 @Composable
 internal fun FiltersContentControls(
@@ -121,6 +122,16 @@ internal fun FiltersContentControls(
                     imageCount = component.basicFilterState.uris?.size?.takeIf { it > 1 },
                     onRepick = component::showPickImageFromUrisSheet
                 )
+                SmartAutoControls(
+                    isRunning = component.isSmartAutoRunning,
+                    onApply = component::applySmartAuto,
+                    showEachImageToggle = (component.basicFilterState.uris?.size ?: 0) > 1,
+                    eachImage = component.smartAutoEachImage,
+                    onEachImageChange = component::setSmartAutoEachImage,
+                    report = component.smartAutoReport,
+                    onDismissReport = component::dismissSmartAutoReport
+                )
+                Spacer(Modifier.size(8.dp))
                 if (filterList.isNotEmpty()) histogramItem()
                 AnimatedContent(
                     targetState = filterList.isNotEmpty(),

@@ -1,0 +1,40 @@
+name: Smart Auto Debug APK
+
+on:
+  push:
+    branches: [ smart-auto ]
+  workflow_dispatch:
+
+concurrency:
+  group: smart-auto-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build FOSS debug APK
+        run: bash ./gradlew :app:assembleFossDebug --stacktrace
+
+      - name: Upload universal debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-auto-debug-apk
+          path: app/build/outputs/apk/foss/debug/*universal*.apk
+          retention-days: 14

@@ -31,6 +31,7 @@ dependencies {
     api(projects.core.filters)
     ksp(projects.core.ksp)
     implementation(projects.core.ksp)
+    implementation(projects.feature.smartAuto)
     implementation(projects.feature.draw)
     implementation(projects.feature.pickColor)
     implementation(projects.feature.compare)

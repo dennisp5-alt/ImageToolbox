@@ -92,6 +92,7 @@ import com.t8rin.imagetoolbox.feature.filters.presentation.components.PreviewReq
 import com.t8rin.imagetoolbox.feature.filters.presentation.components.UiFilterMask
 import com.t8rin.imagetoolbox.feature.filters.presentation.components.addEditMaskSheet.AddMaskSheetComponent
 import com.t8rin.imagetoolbox.feature.filters.presentation.screenLogic.FiltersComponent.HistorySnapshot
+import com.t8rin.imagetoolbox.feature.smart_auto.SmartAuto
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -355,11 +356,17 @@ class FiltersComponent @AssistedInject internal constructor(
             val results = mutableListOf<SaveResult>()
             _done.value = 0
             _left.value = _basicFilterState.value.uris?.size ?: 1
+            val perImageSmartAuto = shouldSmartAutoEachImage()
             _basicFilterState.value.uris?.forEach { uri ->
                 runSuspendCatching {
+                    val chain = if (perImageSmartAuto) {
+                        smartAutoChainFor(uri)
+                    } else {
+                        _basicFilterState.value.filters
+                    }
                     imageGetter.getImageWithTransformations(
                         uri = uri.toString(),
-                        transformations = _basicFilterState.value.filters.map {
+                        transformations = chain.map {
                             filterProvider.filterToTransformation(it)
                         }
                     )?.image
@@ -645,6 +652,77 @@ class FiltersComponent @AssistedInject internal constructor(
         updatePreview()
         commitHistoryFrom(beforeSnapshot)
     }
+
+    // region Smart Auto (dennisp5-alt fork)
+
+    private val _isSmartAutoRunning = mutableStateOf(false)
+    val isSmartAutoRunning by _isSmartAutoRunning
+
+    private val _smartAutoReport = mutableStateOf<String?>(null)
+    val smartAutoReport by _smartAutoReport
+
+    private val _smartAutoEachImage = mutableStateOf(false)
+    val smartAutoEachImage by _smartAutoEachImage
+
+    /** Filters added by the last Smart Auto run, kept by reference so a re-run replaces them. */
+    private var lastSmartAutoFilters: List<UiFilter<*>> = emptyList()
+
+    fun setSmartAutoEachImage(value: Boolean) {
+        _smartAutoEachImage.value = value
+    }
+
+    fun dismissSmartAutoReport() {
+        _smartAutoReport.value = null
+    }
+
+    fun applySmartAuto() {
+        val source = bitmap ?: return
+        if (_isSmartAutoRunning.value) return
+        _isSmartAutoRunning.value = true
+        componentScope.launch {
+            runCatching {
+                withContext(defaultDispatcher) { SmartAuto.run(source) }
+            }.onSuccess { result ->
+                finalizePendingHistoryTransaction()
+                val beforeSnapshot = currentHistorySnapshot()
+                val previous = lastSmartAutoFilters
+                _basicFilterState.update { state ->
+                    val kept = state.filters.filterNot { filter ->
+                        previous.any { it === filter }
+                    }
+                    state.copy(filters = result.filters + kept)
+                }
+                lastSmartAutoFilters = result.filters
+                _smartAutoReport.value = result.report
+                updateCanSave()
+                filterJob = null
+                updatePreview()
+                commitHistoryFrom(beforeSnapshot)
+            }.onFailure { AppToastHost.showFailureToast(it) }
+            _isSmartAutoRunning.value = false
+        }
+    }
+
+    /**
+     * Per-image chain for batch saving: fresh Smart Auto for this photo, followed by
+     * the user's own filters (minus the preview photo's Smart Auto filters).
+     */
+    private suspend fun smartAutoChainFor(uri: Uri): List<UiFilter<*>> {
+        val userFilters = _basicFilterState.value.filters.filterNot { filter ->
+            lastSmartAutoFilters.any { it === filter }
+        }
+        val analysisBitmap = imageGetter.getImage(data = uri.toString(), size = 1024)
+            ?: return _basicFilterState.value.filters
+        val auto = withContext(defaultDispatcher) {
+            SmartAuto.run(analysisBitmap).filters
+        }
+        return auto + userFilters
+    }
+
+    private fun shouldSmartAutoEachImage(): Boolean =
+        smartAutoEachImage && (_basicFilterState.value.uris?.size ?: 0) > 1
+
+    // endregion
 
     fun removeFilterAtIndex(index: Int) {
         finalizePendingHistoryTransaction()
